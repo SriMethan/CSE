@@ -9,8 +9,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 
-# 🔐 YOUR SriMethan AI Model Key (don't expose this publicly!)
-OPENROUTER_API_KEY = "sk-or-your-key-here"
+OPENROUTER_API_KEY = "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"
 
 # 🚀 Page Config
 st.set_page_config(page_title="SriMethan AI • PDF Chat 🤖", layout="centered")
