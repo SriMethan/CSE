@@ -8,14 +8,15 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
+from langchain.prompts import PromptTemplate
 
-# 🔐 Secure API key loading
+# 🔐 Load secure API key
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
 
-# 🚀 Page Config
+# 🚀 Page config
 st.set_page_config(page_title="SriMethan AI • PDF Chat 🤖", layout="centered")
 
-# 🧠 Session State Init
+# 🧠 Session init
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "qa_chain" not in st.session_state:
@@ -23,44 +24,46 @@ if "qa_chain" not in st.session_state:
 if "vectorstore_ready" not in st.session_state:
     st.session_state.vectorstore_ready = False
 
-# 🔠 Response Formatter
-def format_response(text):
-    lines = text.split("\n")
-    output = []
-    for line in lines:
-        if line.strip().endswith(":"):
-            output.append(f"**{line.strip()}**")
-        elif line.strip().startswith("•") or line.strip().startswith("-"):
-            output.append(f"- {line.strip()[1:].strip()}")
-        else:
-            output.append(line.strip())
-    return "\n\n".join(line for line in output if line)
-
-# 🧠 Helper: Generate unique hash for caching
+# 🧠 Helper for hashing PDFs
 def get_file_hash(files):
     md5 = hashlib.md5()
     for file in files:
         md5.update(file.getvalue())
     return md5.hexdigest()
 
-# 🔼 Header
-st.markdown("## 🏢 SRIMETHAN HOLDINGS (PVT) LTD")
+# 🧠 Concise answer mode prompt
+CONDENSE_PROMPT = PromptTemplate.from_template("""
+You're a financial assistant bot. Answer concisely and factually.
 
-# 📄 Top Upload Section
-st.markdown("### 📄 Upload Your PDF(s)")
+If the question is asking for a specific number like "Profit Before Tax", return ONLY that number in this format:
+
+Profit Before Tax: Rs. [value]
+
+Do NOT give explanations, context, or summaries unless explicitly asked.
+Use only the context provided and don't guess.
+
+Question: {question}
+Chat History: {chat_history}
+Answer:
+""")
+
+# 📄 Top Upload Section (Main area)
+st.markdown("# 👑 SRIMETHAN HOLDINGS (PVT) LTD")
+st.markdown("## 📄 Upload Your PDF(s)")
 uploaded_files_top = st.file_uploader("Upload here to get started:", type=["pdf"], accept_multiple_files=True)
 
-# 📄 Sidebar Upload
+# 📄 Sidebar Reupload Option
 with st.sidebar:
     st.markdown("### 🏢 **SriMethan Holdings (PVT) LTD**")
     st.markdown("Bringing your documents to life with AI ⚡")
     st.markdown("---")
-    uploaded_files_sidebar = st.file_uploader("Re-upload your PDFs:", type=["pdf"], accept_multiple_files=True, label_visibility="visible")
+    uploaded_files_sidebar = st.file_uploader("Re-upload your PDFs:", type=["pdf"], accept_multiple_files=True, key="sidebar_upload")
     if uploaded_files_sidebar:
         uploaded_files_top = uploaded_files_sidebar
 
-# ⏳ Build vectorstore if not already
 uploaded_files = uploaded_files_top
+
+# 📚 Load and embed PDFs
 if uploaded_files and not st.session_state.vectorstore_ready:
     file_hash = get_file_hash(uploaded_files)
     db_path = f".cached_vectorstores/{file_hash}"
@@ -88,7 +91,7 @@ if uploaded_files and not st.session_state.vectorstore_ready:
 
     retriever = vectorstore.as_retriever()
 
-    # 🤖 LLM init
+    # 🤖 Setup LLM with streaming
     llm = ChatOpenAI(
         model="deepseek/deepseek-r1-0528:free",
         openai_api_base="https://openrouter.ai/api/v1",
@@ -97,44 +100,44 @@ if uploaded_files and not st.session_state.vectorstore_ready:
         temperature=0.2
     )
 
-    # 🧠 QA chain setup
+    # 🧠 QA chain with custom concise prompt
     st.session_state.qa_chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=retriever,
+        combine_docs_chain_kwargs={"prompt": CONDENSE_PROMPT},
         return_source_documents=False
     )
     st.session_state.vectorstore_ready = True
     st.success("✅ Your files are ready. Start chatting below 👇")
 
-# 💬 Chat UI
+# 💬 Chat Interface
 if st.session_state.vectorstore_ready:
     for q, a in st.session_state.chat_history:
         with st.chat_message("user"):
             st.markdown(f"**You:** {q}")
         with st.chat_message("assistant"):
-            st.markdown(f"**SriMethan Model 🤖:**\n\n{format_response(a)}")
+            st.markdown(f"**SriMethan Model 🤖:**\n\n{a}")
 
     query = st.chat_input("💬 Type your next question...")
     if query:
         with st.chat_message("user"):
             st.markdown(f"**You:** {query}")
 
+        response = ""
         with st.chat_message("assistant"):
-            thinking = st.empty()
-            thinking.markdown("_SriMethan Model 🤖 is thinking..._")
-
-            response = ""
+            msg_box = st.empty()
+            msg_box.markdown("**SriMethan Model 🤖:** Thinking... 🧠")
             for chunk in st.session_state.qa_chain.stream({
                 "question": query,
                 "chat_history": st.session_state.chat_history
             }):
-                response += chunk.get("answer", "")
+                token = chunk.get("answer", "")
+                response += token
+                msg_box.markdown(f"**SriMethan Model 🤖:**\n\n{response}")
 
-            thinking.empty()
-            st.markdown(f"**SriMethan Model 🤖:**\n\n{format_response(response)}")
-            st.session_state.chat_history.append((query, response))
+        st.session_state.chat_history.append((query, response))
 
-    # 📢 Footer
+    # 📢 Footer under chat
     st.markdown("---")
     st.markdown(
         "<div style='text-align: center; font-size: 0.9em;'>"
