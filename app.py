@@ -9,13 +9,13 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 
-# 🔐 Load secure API key
+# 🔐 Secure API key loading
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
 
-# 🚀 Page config
+# 🚀 Page Config
 st.set_page_config(page_title="SriMethan AI • PDF Chat 🤖", layout="centered")
 
-# 🧠 Session init
+# 🧠 Session State Init
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "qa_chain" not in st.session_state:
@@ -23,28 +23,44 @@ if "qa_chain" not in st.session_state:
 if "vectorstore_ready" not in st.session_state:
     st.session_state.vectorstore_ready = False
 
-# 🧠 Helper for hashing PDFs
+# 🔠 Response Formatter
+def format_response(text):
+    lines = text.split("\n")
+    output = []
+    for line in lines:
+        if line.strip().endswith(":"):
+            output.append(f"**{line.strip()}**")
+        elif line.strip().startswith("•") or line.strip().startswith("-"):
+            output.append(f"- {line.strip()[1:].strip()}")
+        else:
+            output.append(line.strip())
+    return "\n\n".join(line for line in output if line)
+
+# 🧠 Helper: Generate unique hash for caching
 def get_file_hash(files):
     md5 = hashlib.md5()
     for file in files:
         md5.update(file.getvalue())
     return md5.hexdigest()
 
-# 📄 Top Upload Section (Main area)
-st.markdown("## 📄 Upload Your PDF(s)")
+# 🔼 Header
+st.markdown("## 🏢 SRIMETHAN HOLDINGS (PVT) LTD")
+
+# 📄 Top Upload Section
+st.markdown("### 📄 Upload Your PDF(s)")
 uploaded_files_top = st.file_uploader("Upload here to get started:", type=["pdf"], accept_multiple_files=True)
 
-# 📄 Sidebar Branding & Upload
+# 📄 Sidebar Upload
 with st.sidebar:
     st.markdown("### 🏢 **SriMethan Holdings (PVT) LTD**")
     st.markdown("Bringing your documents to life with AI ⚡")
     st.markdown("---")
-    uploaded_files_sidebar = st.file_uploader("Upload PDFs again:", type=["pdf"], accept_multiple_files=True, label_visibility="visible")
+    uploaded_files_sidebar = st.file_uploader("Re-upload your PDFs:", type=["pdf"], accept_multiple_files=True, label_visibility="visible")
+    if uploaded_files_sidebar:
+        uploaded_files_top = uploaded_files_sidebar
 
-# Use either top or sidebar upload
-uploaded_files = uploaded_files_sidebar or uploaded_files_top
-
-# 📚 Load + Embed PDFs
+# ⏳ Build vectorstore if not already
+uploaded_files = uploaded_files_top
 if uploaded_files and not st.session_state.vectorstore_ready:
     file_hash = get_file_hash(uploaded_files)
     db_path = f".cached_vectorstores/{file_hash}"
@@ -72,7 +88,7 @@ if uploaded_files and not st.session_state.vectorstore_ready:
 
     retriever = vectorstore.as_retriever()
 
-    # 🤖 Setup LLM
+    # 🤖 LLM init
     llm = ChatOpenAI(
         model="deepseek/deepseek-r1-0528:free",
         openai_api_base="https://openrouter.ai/api/v1",
@@ -81,7 +97,7 @@ if uploaded_files and not st.session_state.vectorstore_ready:
         temperature=0.2
     )
 
-    # 🧠 Setup RAG QA chain
+    # 🧠 QA chain setup
     st.session_state.qa_chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=retriever,
@@ -92,38 +108,37 @@ if uploaded_files and not st.session_state.vectorstore_ready:
 
 # 💬 Chat UI
 if st.session_state.vectorstore_ready:
-    st.markdown("### 🧠 SRIMETHAN HOLDINGS (PVT) LTD")
-    st.markdown("Start chatting with your uploaded documents below 👇")
-
     for q, a in st.session_state.chat_history:
         with st.chat_message("user"):
             st.markdown(f"**You:** {q}")
         with st.chat_message("assistant"):
-            st.markdown(f"**SriMethan Model 🤖:** {a}")
+            st.markdown(f"**SriMethan Model 🤖:**\n\n{format_response(a)}")
 
-    query = st.chat_input("💬 Ask your next question...")
+    query = st.chat_input("💬 Type your next question...")
     if query:
         with st.chat_message("user"):
             st.markdown(f"**You:** {query}")
 
-        response = ""
         with st.chat_message("assistant"):
-            msg_box = st.empty()
+            thinking = st.empty()
+            thinking.markdown("_SriMethan Model 🤖 is thinking..._")
+
+            response = ""
             for chunk in st.session_state.qa_chain.stream({
                 "question": query,
                 "chat_history": st.session_state.chat_history
             }):
-                token = chunk.get("answer", "")
-                response += token
-                msg_box.markdown(f"**SriMethan Model 🤖:** {response}")
+                response += chunk.get("answer", "")
 
-        st.session_state.chat_history.append((query, response))
+            thinking.empty()
+            st.markdown(f"**SriMethan Model 🤖:**\n\n{format_response(response)}")
+            st.session_state.chat_history.append((query, response))
 
-        # ✅ Footer right after question (not bottom of page)
-        st.markdown("---")
-        st.markdown(
-            "<div style='text-align: center; font-size: 0.9em;'>"
-            "Powered by <strong>SriMethan Holdings (PVT) LTD</strong> • © 2025 All rights reserved."
-            "</div>",
-            unsafe_allow_html=True
-        )
+    # 📢 Footer
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align: center; font-size: 0.9em;'>"
+        "Powered by <strong>SriMethan Holdings (PVT) LTD</strong> • © 2025 All rights reserved."
+        "</div>",
+        unsafe_allow_html=True
+    )
