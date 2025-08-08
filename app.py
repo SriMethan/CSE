@@ -9,13 +9,13 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 
-# 🔐 Load secure API key
+# 🔐 Load API key from Streamlit secrets
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
 
 # 🚀 Page config
 st.set_page_config(page_title="SriMethan AI • PDF Chat 🤖", layout="centered")
 
-# 🧠 Session init
+# 🧠 Session state init
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "qa_chain" not in st.session_state:
@@ -23,30 +23,38 @@ if "qa_chain" not in st.session_state:
 if "vectorstore_ready" not in st.session_state:
     st.session_state.vectorstore_ready = False
 
-# 🧠 Helper for hashing PDFs
+# 📄 Top PDF Upload
+st.markdown("## 📄 Upload Your PDF(s)")
+uploaded_files_top = st.file_uploader(
+    label="",
+    type=["pdf"],
+    accept_multiple_files=True,
+    label_visibility="collapsed"
+)
+
+# 📄 Sidebar PDF Upload + Branding
+with st.sidebar:
+    st.markdown("### 🏢 **SriMethan Holdings (PVT) LTD**")
+    st.markdown("Bringing your documents to life with AI ⚡")
+    st.markdown("---")
+    uploaded_files_sidebar = st.file_uploader(
+        label="",
+        type=["pdf"],
+        accept_multiple_files=True,
+        label_visibility="collapsed"
+    )
+
+# Use whichever uploader has files
+uploaded_files = uploaded_files_sidebar if uploaded_files_sidebar else uploaded_files_top
+
+# 🧠 Hash for caching vectorstore
 def get_file_hash(files):
     md5 = hashlib.md5()
     for file in files:
         md5.update(file.getvalue())
     return md5.hexdigest()
 
-# 📄 Top Upload Section (Main area)
-st.markdown("## 📄 Upload Your PDF(s)")
-uploaded_files_top = st.file_uploader("Upload here to get started:", type=["pdf"], accept_multiple_files=True)
-
-# 🧠 Process PDFs if uploaded (either top or sidebar)
-uploaded_files = uploaded_files_top
-
-# 📄 Sidebar Reupload Option
-with st.sidebar:
-    st.markdown("### 🏢 **SriMethan Holdings (PVT) LTD**")
-    st.markdown("Bringing your documents to life with AI ⚡")
-    st.markdown("---")
-    uploaded_files_sidebar = st.file_uploader("Re-upload your PDFs:", type=["pdf"], accept_multiple_files=True)
-    if uploaded_files_sidebar:
-        uploaded_files = uploaded_files_sidebar
-
-# 📚 Load and embed PDFs
+# 🧠 Vectorstore Builder
 if uploaded_files and not st.session_state.vectorstore_ready:
     file_hash = get_file_hash(uploaded_files)
     db_path = f".cached_vectorstores/{file_hash}"
@@ -74,7 +82,7 @@ if uploaded_files and not st.session_state.vectorstore_ready:
 
     retriever = vectorstore.as_retriever()
 
-    # 🤖 Setup LLM with streaming
+    # 🔮 DeepSeek-powered LLM via OpenRouter
     llm = ChatOpenAI(
         model="deepseek/deepseek-r1-0528:free",
         openai_api_base="https://openrouter.ai/api/v1",
@@ -83,7 +91,7 @@ if uploaded_files and not st.session_state.vectorstore_ready:
         temperature=0.2
     )
 
-    # 🧠 QA chain with memory
+    # 🔗 QA Chain with memory
     st.session_state.qa_chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=retriever,
@@ -92,7 +100,7 @@ if uploaded_files and not st.session_state.vectorstore_ready:
     st.session_state.vectorstore_ready = True
     st.success("✅ Your files are ready. Start chatting below 👇")
 
-# 💬 Chat Interface
+# 🗨️ Chat Interface
 if st.session_state.vectorstore_ready:
     for q, a in st.session_state.chat_history:
         with st.chat_message("user"):
