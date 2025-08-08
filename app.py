@@ -32,31 +32,19 @@ def get_file_hash(files):
 
 # 📄 Top Upload Section (Main area)
 st.markdown("## 📄 Upload Your PDF(s)")
-uploaded_files_top = st.file_uploader(
-    label="Upload PDFs here (visible top)",
-    type=["pdf"],
-    accept_multiple_files=True,
-    label_visibility="collapsed"
-)
+uploaded_files_top = st.file_uploader("Upload here to get started:", type=["pdf"], accept_multiple_files=True)
 
-# 🧠 Process PDFs if uploaded (either top or sidebar)
-uploaded_files = uploaded_files_top
-
-# 📄 Sidebar Reupload Option
+# 📄 Sidebar Branding & Upload
 with st.sidebar:
     st.markdown("### 🏢 **SriMethan Holdings (PVT) LTD**")
     st.markdown("Bringing your documents to life with AI ⚡")
     st.markdown("---")
-    uploaded_files_sidebar = st.file_uploader(
-        label="Upload PDFs (sidebar)",
-        type=["pdf"],
-        accept_multiple_files=True,
-        label_visibility="collapsed"
-    )
-    if uploaded_files_sidebar:
-        uploaded_files = uploaded_files_sidebar
+    uploaded_files_sidebar = st.file_uploader("Upload PDFs again:", type=["pdf"], accept_multiple_files=True, label_visibility="visible")
 
-# 📚 Load and embed PDFs
+# Use either top or sidebar upload
+uploaded_files = uploaded_files_sidebar or uploaded_files_top
+
+# 📚 Load + Embed PDFs
 if uploaded_files and not st.session_state.vectorstore_ready:
     file_hash = get_file_hash(uploaded_files)
     db_path = f".cached_vectorstores/{file_hash}"
@@ -84,7 +72,7 @@ if uploaded_files and not st.session_state.vectorstore_ready:
 
     retriever = vectorstore.as_retriever()
 
-    # 🤖 Setup LLM with streaming
+    # 🤖 Setup LLM
     llm = ChatOpenAI(
         model="deepseek/deepseek-r1-0528:free",
         openai_api_base="https://openrouter.ai/api/v1",
@@ -93,7 +81,7 @@ if uploaded_files and not st.session_state.vectorstore_ready:
         temperature=0.2
     )
 
-    # 🧠 QA chain with memory
+    # 🧠 Setup RAG QA chain
     st.session_state.qa_chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=retriever,
@@ -102,8 +90,11 @@ if uploaded_files and not st.session_state.vectorstore_ready:
     st.session_state.vectorstore_ready = True
     st.success("✅ Your files are ready. Start chatting below 👇")
 
-# 💬 Chat Interface
+# 💬 Chat UI
 if st.session_state.vectorstore_ready:
+    st.markdown("### 🧠 SRIMETHAN HOLDINGS (PVT) LTD")
+    st.markdown("Start chatting with your uploaded documents below 👇")
+
     for q, a in st.session_state.chat_history:
         with st.chat_message("user"):
             st.markdown(f"**You:** {q}")
@@ -128,11 +119,11 @@ if st.session_state.vectorstore_ready:
 
         st.session_state.chat_history.append((query, response))
 
-# 📢 Footer
-st.markdown("---")
-st.markdown(
-    "<div style='text-align: center; font-size: 0.9em;'>"
-    "Powered by <strong>SriMethan Holdings (PVT) LTD</strong> • © 2025 All rights reserved."
-    "</div>",
-    unsafe_allow_html=True
-)
+        # ✅ Footer right after question (not bottom of page)
+        st.markdown("---")
+        st.markdown(
+            "<div style='text-align: center; font-size: 0.9em;'>"
+            "Powered by <strong>SriMethan Holdings (PVT) LTD</strong> • © 2025 All rights reserved."
+            "</div>",
+            unsafe_allow_html=True
+        )
