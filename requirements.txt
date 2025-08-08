@@ -5,5 +5,5 @@ langchain-openai
 sentence-transformers
 faiss-cpu
 pymupdf
-openai
 pypdf
+openai
