@@ -1,0 +1,17 @@
+[theme]
+primaryColor = "#f39c12"                    # SriMethan gold 🔥
+backgroundColor = "#ffffff"                 # Pure white
+secondaryBackgroundColor = "#f2f2f2"        # Clean light gray
+textColor = "#000000"                       # Sharp black
+font = "sans serif"                         # Sleek modern font
+
+[server]
+headless = true
+enableStaticServing = true
+
+[client]
+toolbarMode = "minimal"                     # No "hamburger" menu
+
+[ui]
+hideTopBar = true                           # Hide expand/collapse icon
+hideSidebarNav = true                       # Hides Streamlit’s default menu
