@@ -3,20 +3,20 @@ import os
 import tempfile
 import hashlib
 from langchain.chains import ConversationalRetrievalChain
+from langchain.chains.question_answering import load_qa_chain
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
-from langchain.prompts import PromptTemplate
 
-# 🔐 Load secure API key
+# 🔐 Secure API Key
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
 
 # 🚀 Page config
 st.set_page_config(page_title="SriMethan AI • PDF Chat 🤖", layout="centered")
 
-# 🧠 Session init
+# 🧠 Session Init
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "qa_chain" not in st.session_state:
@@ -24,46 +24,30 @@ if "qa_chain" not in st.session_state:
 if "vectorstore_ready" not in st.session_state:
     st.session_state.vectorstore_ready = False
 
-# 🧠 Helper for hashing PDFs
+# 🧠 Hashing for cache
+
 def get_file_hash(files):
     md5 = hashlib.md5()
     for file in files:
         md5.update(file.getvalue())
     return md5.hexdigest()
 
-# 🧠 Concise answer mode prompt
-CONDENSE_PROMPT = PromptTemplate.from_template("""
-You're a financial assistant bot. Answer concisely and factually.
-
-If the question is asking for a specific number like "Profit Before Tax", return ONLY that number in this format:
-
-Profit Before Tax: Rs. [value]
-
-Do NOT give explanations, context, or summaries unless explicitly asked.
-Use only the context provided and don't guess.
-
-Question: {question}
-Chat History: {chat_history}
-Answer:
-""")
-
-# 📄 Top Upload Section (Main area)
-st.markdown("# 👑 SRIMETHAN HOLDINGS (PVT) LTD")
+# 📄 Main Upload Area
 st.markdown("## 📄 Upload Your PDF(s)")
 uploaded_files_top = st.file_uploader("Upload here to get started:", type=["pdf"], accept_multiple_files=True)
 
-# 📄 Sidebar Reupload Option
+uploaded_files = uploaded_files_top
+
+# 📚 Sidebar
 with st.sidebar:
     st.markdown("### 🏢 **SriMethan Holdings (PVT) LTD**")
     st.markdown("Bringing your documents to life with AI ⚡")
     st.markdown("---")
-    uploaded_files_sidebar = st.file_uploader("Re-upload your PDFs:", type=["pdf"], accept_multiple_files=True, key="sidebar_upload")
+    uploaded_files_sidebar = st.file_uploader("Re-upload your PDFs:", type=["pdf"], accept_multiple_files=True)
     if uploaded_files_sidebar:
-        uploaded_files_top = uploaded_files_sidebar
+        uploaded_files = uploaded_files_sidebar
 
-uploaded_files = uploaded_files_top
-
-# 📚 Load and embed PDFs
+# 📚 Process and Embed
 if uploaded_files and not st.session_state.vectorstore_ready:
     file_hash = get_file_hash(uploaded_files)
     db_path = f".cached_vectorstores/{file_hash}"
@@ -91,7 +75,6 @@ if uploaded_files and not st.session_state.vectorstore_ready:
 
     retriever = vectorstore.as_retriever()
 
-    # 🤖 Setup LLM with streaming
     llm = ChatOpenAI(
         model="deepseek/deepseek-r1-0528:free",
         openai_api_base="https://openrouter.ai/api/v1",
@@ -100,15 +83,19 @@ if uploaded_files and not st.session_state.vectorstore_ready:
         temperature=0.2
     )
 
-    # 🧠 QA chain with custom concise prompt
-    st.session_state.qa_chain = ConversationalRetrievalChain.from_llm(
-        llm=llm,
+    qa_chain = load_qa_chain(llm, chain_type="stuff")
+
+    st.session_state.qa_chain = ConversationalRetrievalChain(
         retriever=retriever,
-        combine_docs_chain_kwargs={"prompt": CONDENSE_PROMPT},
+        combine_docs_chain=qa_chain,
         return_source_documents=False
     )
+
     st.session_state.vectorstore_ready = True
     st.success("✅ Your files are ready. Start chatting below 👇")
+
+# 📢 Title Header
+st.markdown("# 🏢 SRIMETHAN HOLDINGS (PVT) LTD")
 
 # 💬 Chat Interface
 if st.session_state.vectorstore_ready:
@@ -118,7 +105,7 @@ if st.session_state.vectorstore_ready:
         with st.chat_message("assistant"):
             st.markdown(f"**SriMethan Model 🤖:**\n\n{a}")
 
-    query = st.chat_input("💬 Type your next question...")
+    query = st.chat_input("💬 Ask your next question...")
     if query:
         with st.chat_message("user"):
             st.markdown(f"**You:** {query}")
@@ -126,7 +113,7 @@ if st.session_state.vectorstore_ready:
         response = ""
         with st.chat_message("assistant"):
             msg_box = st.empty()
-            msg_box.markdown("**SriMethan Model 🤖:** Thinking... 🧠")
+            msg_box.markdown("**SriMethan Model 🤖:**\n\nThinking...")
             for chunk in st.session_state.qa_chain.stream({
                 "question": query,
                 "chat_history": st.session_state.chat_history
@@ -137,11 +124,10 @@ if st.session_state.vectorstore_ready:
 
         st.session_state.chat_history.append((query, response))
 
-    # 📢 Footer under chat
-    st.markdown("---")
-    st.markdown(
-        "<div style='text-align: center; font-size: 0.9em;'>"
-        "Powered by <strong>SriMethan Holdings (PVT) LTD</strong> • © 2025 All rights reserved."
-        "</div>",
-        unsafe_allow_html=True
-    )
+        # 📢 Footer
+        st.markdown("""
+        ---
+        <div style='text-align: center; font-size: 0.9em;'>
+        Powered by <strong>SriMethan Holdings (PVT) LTD</strong> • © 2025 All rights reserved.
+        </div>
+        """, unsafe_allow_html=True)
