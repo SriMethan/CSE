@@ -2,7 +2,6 @@ import streamlit as st
 import os
 import tempfile
 import hashlib
-import re
 from langchain.chains import ConversationalRetrievalChain
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -19,7 +18,7 @@ OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
 # 🚀 Page config
 st.set_page_config(page_title="SriMethan AI • PDF Chat 🤖", layout="centered")
 
-# 🎨 Light theme + bubbles (same design, with alignment)
+# 🎨 Light theme + ChatGPT-style, with right/left alignment
 st.markdown("""
 <style>
 body {
@@ -47,7 +46,7 @@ body {
     white-space: pre-wrap;
 }
 .chat-bubble.user {
-    background-color: #DCF8C6; /* light green */
+    background-color: #DCF8C6; /* light green (iMessage style) */
     color: #111;
 }
 .chat-bubble.assistant {
@@ -75,27 +74,14 @@ def get_file_hash(files):
         md5.update(file.getvalue())
     return md5.hexdigest()
 
-# 🔎 Intent helpers
-_SMALLTALK = re.compile(r"^(ok(ay)?|thanks|thank you|cool|great|nice|hi|hello|hey|yo|bye|goodbye|lol|haha|👌|👍|😀|🙂|😉)\b", re.I)
-_METRIC_HINTS = re.compile(r"(profit|pbt|pat|eps|revenue|turnover|liabilit(y|ies)|assets?|equity|roe|roa|npl|cas|nav|opex|capex|net\s+income|gross\s+profit)", re.I)
-
-def is_smalltalk(q: str) -> bool:
-    return bool(_SMALLTALK.search(q.strip()))
-
-def is_metric_query(q: str) -> bool:
-    return bool(_METRIC_HINTS.search(q)) and len(q) < 120
-
-# 🧠 Prompts
-
-# 1) For combining docs (RAG answer). Flexible: numeric when metric asked; short summary otherwise.
+# 🧠 Prompts (unchanged)
 DOC_PROMPT = PromptTemplate.from_template("""
-You are a financial assistant. Use ONLY the provided context to answer.
+You are a financial assistant. Use ONLY the context to answer the question concisely.
 
-Rules:
-- If the user asks for a specific metric (e.g., Profit Before Tax, Total Equity, EPS), return ONLY that metric in this exact format: <Metric Name>: <value>
-- If the user asks a qualitative question (e.g., "How is this quarter?"), give a brief 2–4 sentence summary using key figures from context.
-- If the metric is not in context, say "Not available in the provided context."
-- Do not invent numbers.
+If the user asks for a specific metric (e.g., Profit Before Tax, Total Equity, EPS), return ONLY that metric in this exact format:
+<Metric Name>: <value>
+
+No extra sentences unless specifically asked.
 
 Context:
 {context}
@@ -105,10 +91,8 @@ Question: {question}
 Answer:
 """)
 
-# 2) For question rewriting inside the convo RAG. Don’t turn chit-chat into questions.
 CONDENSE_QUESTION_PROMPT = PromptTemplate.from_template("""
-You will rewrite a follow-up into a standalone question answerable from the documents context.
-If the input is chit-chat (greetings, thanks, small talk), just return the original text unchanged.
+Given the conversation and a follow-up question, rewrite the follow-up into a standalone question that can be answered from the context.
 
 Chat History:
 {chat_history}
@@ -118,20 +102,12 @@ Follow-up Question: {question}
 Standalone Question:
 """)
 
-# 3) General chat (no docs) — used for smalltalk or non-document questions
-GENERAL_CHAT_PROMPT = PromptTemplate.from_template("""
-You are a friendly, concise assistant for SriMethan Holdings (PVT) LTD.
-- If the message is chit-chat (e.g., "ok thanks", "hi"), reply warmly in 1 short sentence.
-- Otherwise, answer briefly and helpfully in 1–3 sentences.
-
-User: {user_input}
-Assistant:
-""")
-
 # 📄 Upload section
 st.markdown("<h1 style='text-align:center;'>👑 SRIMETHAN HOLDINGS (PVT) LTD</h1>", unsafe_allow_html=True)
 st.markdown("## 📄 Upload Your PDF(s)")
-uploaded_files_top = st.file_uploader("Upload here to get started:", type=["pdf"], accept_multiple_files=True)
+uploaded_files_top = st.file_uploader(
+    "Upload here to get started:", type=["pdf"], accept_multiple_files=True
+)
 
 # 📄 Sidebar
 with st.sidebar:
@@ -189,7 +165,6 @@ if uploaded_files and not st.session_state.vectorstore_ready:
         },
     )
 
-    # Build RAG chains
     combine_docs_chain = load_qa_chain(llm, chain_type="stuff", prompt=DOC_PROMPT)
     question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
 
@@ -199,9 +174,6 @@ if uploaded_files and not st.session_state.vectorstore_ready:
         question_generator=question_generator,
         return_source_documents=False,
     )
-
-    # Also keep a general chat chain for smalltalk/non-doc questions
-    st.session_state.general_chain = LLMChain(llm=llm, prompt=GENERAL_CHAT_PROMPT)
 
     st.session_state.vectorstore_ready = True
     st.success("✅ Your files are ready. Start chatting below 👇")
@@ -230,41 +202,34 @@ if st.session_state.vectorstore_ready:
     if query:
         render_user(query)
 
-        # Route: small talk or non-metric general → general chat (no RAG)
-        if is_smalltalk(query):
-            resp = st.session_state.general_chain.invoke({"user_input": query})["text"]
-            render_assistant(resp.strip())
-            st.session_state.chat_history.append((query, resp.strip()))
-        else:
-            response = ""
-            placeholder = st.empty()
+        response = ""
+        placeholder = st.empty()
+        # Initial assistant bubble (left) with thinking state
+        placeholder.markdown(
+            "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model 🤖:</b> Thinking... 🧠</div></div>",
+            unsafe_allow_html=True,
+        )
 
-            # Initial assistant bubble with thinking state
-            placeholder.markdown(
-                "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model 🤖:</b> Thinking... 🧠</div></div>",
-                unsafe_allow_html=True,
-            )
-
-            try:
-                # For metric-type queries, the DOC_PROMPT already returns one-line values.
-                # For open-ended finance questions, it returns a short 2–4 sentence summary.
-                for chunk in st.session_state.qa_chain.stream({
-                    "question": query,
-                    "chat_history": st.session_state.chat_history
-                }):
-                    response += chunk.get("answer", "")
-                    placeholder.markdown(
-                        f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model 🤖:</b> {response}</div></div>",
-                        unsafe_allow_html=True,
-                    )
-            except Exception:
+        try:
+            for chunk in st.session_state.qa_chain.stream({
+                "question": query,
+                "chat_history": st.session_state.chat_history
+            }):
+                token = chunk.get("answer", "")
+                response += token
+                # Update the assistant bubble left-aligned
                 placeholder.markdown(
-                    "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model 🤖:</b> ❌ Error connecting to model.</div></div>",
+                    f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model 🤖:</b> {response}</div></div>",
                     unsafe_allow_html=True,
                 )
-                raise
+        except Exception:
+            placeholder.markdown(
+                "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model 🤖:</b> ❌ Error connecting to model.</div></div>",
+                unsafe_allow_html=True,
+            )
+            raise
 
-            st.session_state.chat_history.append((query, response.strip()))
+        st.session_state.chat_history.append((query, response))
 
     st.markdown("---")
     st.markdown(
