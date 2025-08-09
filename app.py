@@ -106,28 +106,34 @@ if uploaded_files and not st.session_state.vectorstore_ready:
 
     retriever = vectorstore.as_retriever()
 
-    # 🤖 Setup LLM with streaming
+    # 🚫 Prevent env key leakage to OpenAI endpoint
+    os.environ.pop("OPENAI_API_KEY", None)
+    os.environ.pop("OPENAI_BASE_URL", None)
+
+    # 🤖 Setup LLM with OpenRouter (auth fix: use base_url+api_key; add headers)
     llm = ChatOpenAI(
         model="deepseek/deepseek-r1-0528:free",
-        openai_api_base="https://openrouter.ai/api/v1",
-        openai_api_key=OPENROUTER_API_KEY,
+        api_key=OPENROUTER_API_KEY,                 # ← use api_key
+        base_url="https://openrouter.ai/api/v1",    # ← use base_url
         streaming=True,
-        temperature=0.2
+        temperature=0.2,
+        # Optional headers help OpenRouter route/attribute (not required but nice)
+        default_headers={
+            # Replace with your deployed app URL if you have one
+            "HTTP-Referer": "https://streamlit.io/",
+            "X-Title": "SriMethan PDF Chat",
+        },
     )
 
-    # ✅ Build the two internal chains explicitly to avoid Pydantic validation errors
-    # 1) Combine docs chain (StuffDocumentsChain) expects {context, question}
+    # ✅ Build internal chains explicitly (no Pydantic prompt var errors)
     combine_docs_chain = load_qa_chain(llm, chain_type="stuff", prompt=DOC_PROMPT)
-
-    # 2) Question generator (LLMChain) expects {chat_history, question}
     question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
 
-    # 3) Wire them into ConversationalRetrievalChain
     st.session_state.qa_chain = ConversationalRetrievalChain(
         retriever=retriever,
         combine_docs_chain=combine_docs_chain,
         question_generator=question_generator,
-        return_source_documents=False
+        return_source_documents=False,
     )
 
     st.session_state.vectorstore_ready = True
@@ -150,13 +156,17 @@ if st.session_state.vectorstore_ready:
         with st.chat_message("assistant"):
             msg_box = st.empty()
             msg_box.markdown("**SriMethan Model 🤖:** Thinking... 🧠")
-            for chunk in st.session_state.qa_chain.stream({
-                "question": query,
-                "chat_history": st.session_state.chat_history
-            }):
-                token = chunk.get("answer", "")
-                response += token
-                msg_box.markdown(f"**SriMethan Model 🤖:**\n\n{response}")
+            try:
+                for chunk in st.session_state.qa_chain.stream({
+                    "question": query,
+                    "chat_history": st.session_state.chat_history
+                }):
+                    token = chunk.get("answer", "")
+                    response += token
+                    msg_box.markdown(f"**SriMethan Model 🤖:**\n\n{response}")
+            except Exception as e:
+                msg_box.markdown("**SriMethan Model 🤖:** Sorry, I couldn't reach the model. Check your API key / usage.")
+                raise
 
         st.session_state.chat_history.append((query, response))
 
