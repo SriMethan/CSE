@@ -2,13 +2,11 @@ import streamlit as st
 import os
 import tempfile
 import hashlib
-import re
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
-from langchain.chains.llm import LLMChain
 from langchain_core.messages import HumanMessage
 
 # 🔐 API Key
@@ -17,7 +15,7 @@ OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
 # 🚀 Page config
 st.set_page_config(page_title="SriMethan AI", layout="centered")
 
-# 🎨 Light theme + ChatGPT-style, with right/left alignment (unchanged design)
+# 🎨 Light theme + ChatGPT-style, with right/left alignment
 st.markdown("""
 <style>
 body {
@@ -43,11 +41,12 @@ body {
     white-space: pre-wrap;
 }
 .chat-bubble.user {
-    background-color: #DCF8C6;
+    background-color: #DCF8C6; /* light green */
     color: #111;
 }
+chat-bubble.assistant {}
 .chat-bubble.assistant {
-    background-color: #F7F7F8;
+    background-color: #F7F7F8; /* subtle gray */
     color: #111;
 }
 /* Hide default Streamlit header/footer chrome */
@@ -59,17 +58,11 @@ footer, header {visibility: hidden;}
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "doc_text" not in st.session_state:
-    st.session_state.doc_text = ""          # concatenated PDF text fed directly to DeepSeek
+    st.session_state.doc_text = ""          # concatenated PDF text (optional)
 if "vectorstore_ready" not in st.session_state:
     st.session_state.vectorstore_ready = False
 
 # 🧠 Helpers
-def get_file_hash(files):
-    md5 = hashlib.md5()
-    for file in files:
-        md5.update(file.getvalue())
-    return md5.hexdigest()
-
 def render_user(text: str):
     st.markdown(
         f"<div class='chat-row user'><div class='chat-bubble user'><b>You:</b> {text}</div></div>",
@@ -82,62 +75,49 @@ def render_assistant(text: str):
         unsafe_allow_html=True,
     )
 
-_SMALLTALK = re.compile(r"^(ok(ay)?|thanks|thank you|cool|great|nice|hi|hello|hey|yo|bye|goodbye|lol|haha|😀|🙂|😉|👍|👌)\b", re.I)
-def is_smalltalk(q: str) -> bool:
-    return bool(_SMALLTALK.search(q.strip()))
+def get_file_hash(files):
+    md5 = hashlib.md5()
+    for file in files:
+        md5.update(file.getvalue())
+    return md5.hexdigest()
 
-# 📏 We’ll cap the document we pass to the model to avoid blowing the context.
-# DeepSeek R1 on OpenRouter has a large window, but we’ll be safe.
-MAX_DOC_CHARS = 120_000  # adjust if you want to push more
+# 📏 Soft cap on doc text to keep latency sane (DeepSeek has big context though)
+MAX_DOC_CHARS = 160_000
 
-# 🧠 “Direct read” prompt (no retrieval, no embeddings, just raw doc text)
+# 🔥 Single universal prompt (NO routing, NO RAG)
+# - Always answer in ≤ 1–2 short sentences (aim 25 words max).
+# - You MAY use the Document if it helps; otherwise ignore it and answer normally.
 DIRECT_PROMPT = PromptTemplate.from_template("""
-You are a helpful financial assistant for SriMethan Holdings (PVT) LTD.
+You are SriMethan's assistant. Answer anything.
+Keep replies extremely brief: ideally one short sentence (max ~25 words).
+If the Document below is relevant, use it; otherwise ignore it and answer from general knowledge.
+If you truly lack info, say so briefly (no long explanations).
 
-Use ONLY the Document below to answer.
-Answer style: ONE short, natural sentence. If the user asks a specific metric, include the value naturally (e.g., "Total assets are Rs 2.999T as at 31 Mar 2025.").
-If the answer is not in the Document, say: "Not found in the provided document."
-
-Document:
+Document (optional):
 {doc}
 
-User question: {question}
-
-Answer:
-""")
-
-# Small talk / non-document prompt (also one short sentence)
-GENERAL_CHAT_PROMPT = PromptTemplate.from_template("""
-You are a friendly assistant for SriMethan Holdings (PVT) LTD.
-Reply in ONE short sentence, natural and helpful.
-
-User: {user_input}
+User: {question}
 Assistant:
 """)
 
-# 📄 Upload section (unchanged design)
+# 📄 Upload section
 st.markdown("<h1 style='text-align:center;'>👑 SRIMETHAN HOLDINGS (PVT) LTD</h1>", unsafe_allow_html=True)
 st.markdown("## 📄 Upload Your PDF(s)")
-uploaded_files_top = st.file_uploader(
-    "Upload here to get started:", type=["pdf"], accept_multiple_files=True
-)
+uploaded_files_top = st.file_uploader("Upload here to get started:", type=["pdf"], accept_multiple_files=True)
 
-# 📄 Sidebar (unchanged)
+# 📄 Sidebar (brand)
 with st.sidebar:
     st.markdown("### 🏢 **SriMethan Holdings (PVT) LTD**")
     st.markdown("Bringing your documents to life with AI ⚡")
     st.markdown("---")
-    uploaded_files_sidebar = st.file_uploader(
-        "Re-upload your PDFs:", type=["pdf"], accept_multiple_files=True, key="sidebar_upload"
-    )
+    uploaded_files_sidebar = st.file_uploader("Re-upload your PDFs:", type=["pdf"], accept_multiple_files=True, key="sidebar_upload")
     if uploaded_files_sidebar:
         uploaded_files_top = uploaded_files_sidebar
 
 uploaded_files = uploaded_files_top
 
-# 📚 Process PDFs (NO RAG): just read and concatenate text, store in session_state.doc_text
+# 📚 Read PDFs (NO embeddings, NO retriever): just extract + concat text
 if uploaded_files and not st.session_state.vectorstore_ready:
-    # Build concatenated text from all PDFs
     all_texts = []
     for file in uploaded_files:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
@@ -145,15 +125,12 @@ if uploaded_files and not st.session_state.vectorstore_ready:
             loader = PyPDFLoader(tmp_file.name)
             pages = loader.load()
 
-        # Split into chunks to normalize whitespace then join; no embeddings
         splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         chunks = splitter.split_documents(pages)
-        # Keep simple “section” separators to help the model parse
         joined = "\n\n".join([c.page_content.strip() for c in chunks if c.page_content.strip()])
         all_texts.append(joined)
 
     full_text = "\n\n====\n\n".join(all_texts).strip()
-    # Truncate to safe size
     if len(full_text) > MAX_DOC_CHARS:
         full_text = full_text[:MAX_DOC_CHARS]
 
@@ -161,9 +138,9 @@ if uploaded_files and not st.session_state.vectorstore_ready:
     st.session_state.vectorstore_ready = True
     st.success("✅ Your files are ready. Start chatting below 👇")
 
-# 🤖 DeepSeek LLM (same config, no vectorstore)
+# 🤖 DeepSeek (via OpenRouter), always used
 if st.session_state.vectorstore_ready:
-    # Prevent any OpenAI default env hijack
+    # Kill any OpenAI defaults that might hijack
     os.environ.pop("OPENAI_API_KEY", None)
     os.environ.pop("OPENAI_BASE_URL", None)
 
@@ -179,57 +156,50 @@ if st.session_state.vectorstore_ready:
         },
     )
 
-    # Prebuild chains for convenience (both 1-sentence outputs)
-    direct_chain = LLMChain(llm=llm, prompt=DIRECT_PROMPT)
-    general_chain = LLMChain(llm=llm, prompt=GENERAL_CHAT_PROMPT)
-
     # Render history
     for q, a in st.session_state.chat_history:
         render_user(q)
         render_assistant(a)
 
-    # Input
+    # Input (single universal flow)
     query = st.chat_input("💬 Type your next question...")
     if query:
         render_user(query)
 
-        # If small talk / generic → answer one short sentence without the doc
-        if is_smalltalk(query):
-            resp = general_chain.invoke({"user_input": query}).get("text", "").strip()
-            if not resp:
-                resp = "Got it!"
-            render_assistant(resp)
-            st.session_state.chat_history.append((query, resp))
-        else:
-            # Stream the answer using the direct doc prompt
-            response = ""
-            placeholder = st.empty()
-            placeholder.markdown(
-                "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> Thinking... 🧠</div></div>",
-                unsafe_allow_html=True,
-            )
+        response = ""
+        placeholder = st.empty()
+        placeholder.markdown(
+            "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> Thinking... 🧠</div></div>",
+            unsafe_allow_html=True,
+        )
 
-            # Compose a single message with the rendered prompt (no retrieval)
-            rendered = DIRECT_PROMPT.format(doc=st.session_state.doc_text, question=query)
-            try:
-                # Stream chunks
-                for chunk in llm.stream([HumanMessage(content=rendered)]):
-                    piece = getattr(chunk, "content", "") or ""
-                    response += piece
-                    placeholder.markdown(
-                        f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> {response}</div></div>",
-                        unsafe_allow_html=True,
-                    )
-            except Exception:
+        # Build the one-shot prompt with doc attached (optional)
+        rendered = DIRECT_PROMPT.format(
+            doc=st.session_state.doc_text or "(no document provided)",
+            question=query
+        )
+
+        try:
+            # Stream directly (no retrieval, no routing)
+            for chunk in llm.stream([HumanMessage(content=rendered)]):
+                piece = getattr(chunk, "content", "") or ""
+                response += piece
+                # keep it snappy in UI as it streams
                 placeholder.markdown(
-                    "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> ❌ Error connecting to model.</div></div>",
+                    f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> {response}</div></div>",
                     unsafe_allow_html=True,
                 )
-                raise
+        except Exception:
+            placeholder.markdown(
+                "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> ❌ Error connecting to model.</div></div>",
+                unsafe_allow_html=True,
+            )
+            raise
 
-            response = response.strip() or "Not found in the provided document."
-            st.session_state.chat_history.append((query, response))
-
+        # Final tidy (trim whitespace; optional hard cap for safety)
+        response = (response or "").strip()
+        st.session_state.chat_history.append((query, response or "I don't have enough info to answer."))
+    
     st.markdown("---")
     st.markdown(
         "<div style='text-align: center; font-size: 0.9em;'>"
