@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import tempfile
 import hashlib
+import re
 from langchain.chains import ConversationalRetrievalChain
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -64,6 +65,8 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "qa_chain" not in st.session_state:
     st.session_state.qa_chain = None
+if "general_chain" not in st.session_state:
+    st.session_state.general_chain = None
 if "vectorstore_ready" not in st.session_state:
     st.session_state.vectorstore_ready = False
 
@@ -74,14 +77,23 @@ def get_file_hash(files):
         md5.update(file.getvalue())
     return md5.hexdigest()
 
-# 🧠 Prompts (unchanged)
+# 🧠 Small-talk detector (to answer normally without RAG)
+_SMALLTALK = re.compile(r"^(ok(ay)?|thanks|thank you|cool|great|nice|hi|hello|hey|yo|bye|goodbye|lol|haha|😀|🙂|😉|👍|👌)\b", re.I)
+def is_smalltalk(q: str) -> bool:
+    return bool(_SMALLTALK.search(q.strip()))
+
+# 🧠 Prompts
+
+# RAG answer → always short + normal sentence(s)
 DOC_PROMPT = PromptTemplate.from_template("""
-You are a financial assistant. Use ONLY the context to answer the question concisely.
+You are a financial assistant. Use ONLY the provided context.
 
-If the user asks for a specific metric (e.g., Profit Before Tax, Total Equity, EPS), return ONLY that metric in this exact format:
-<Metric Name>: <value>
-
-No extra sentences unless specifically asked.
+Answer style:
+- Keep it short and normal: 1 sentence for direct facts; up to 2–3 short sentences for open-ended questions.
+- If the user asks a specific metric (e.g., Profit Before Tax, Total Assets, Total Liabilities, EPS), include the metric and the value in a natural short sentence (e.g., "Total assets are Rs 2.999T as at 31 Mar 2025.").
+- If Total Liabilities aren't given but Total Assets and Total Equity are, you MAY compute Liabilities = Assets − Equity and say it's derived.
+- Do NOT confuse commitments/contingencies with liabilities.
+- If not available and not derivable, say: "Not available in the provided context."
 
 Context:
 {context}
@@ -91,8 +103,10 @@ Question: {question}
 Answer:
 """)
 
+# Rewriter: don't overcook small talk; just pass it through
 CONDENSE_QUESTION_PROMPT = PromptTemplate.from_template("""
-Given the conversation and a follow-up question, rewrite the follow-up into a standalone question that can be answered from the context.
+Rewrite the follow-up into a standalone question answerable from the documents context.
+If the input is simple chit-chat (greetings/thanks/etc.), return it unchanged.
 
 Chat History:
 {chat_history}
@@ -100,6 +114,15 @@ Chat History:
 Follow-up Question: {question}
 
 Standalone Question:
+""")
+
+# General chat: one short sentence, no RAG
+GENERAL_CHAT_PROMPT = PromptTemplate.from_template("""
+You are a friendly assistant for SriMethan Holdings (PVT) LTD.
+Reply in ONE short sentence, natural and helpful.
+
+User: {user_input}
+Assistant:
 """)
 
 # 📄 Upload section
@@ -165,8 +188,10 @@ if uploaded_files and not st.session_state.vectorstore_ready:
         },
     )
 
+    # Build chains
     combine_docs_chain = load_qa_chain(llm, chain_type="stuff", prompt=DOC_PROMPT)
     question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
+    general_chain = LLMChain(llm=llm, prompt=GENERAL_CHAT_PROMPT)
 
     st.session_state.qa_chain = ConversationalRetrievalChain(
         retriever=retriever,
@@ -174,6 +199,7 @@ if uploaded_files and not st.session_state.vectorstore_ready:
         question_generator=question_generator,
         return_source_documents=False,
     )
+    st.session_state.general_chain = general_chain
 
     st.session_state.vectorstore_ready = True
     st.success("✅ Your files are ready. Start chatting below 👇")
@@ -202,34 +228,38 @@ if st.session_state.vectorstore_ready:
     if query:
         render_user(query)
 
-        response = ""
-        placeholder = st.empty()
-        # Initial assistant bubble (left) with thinking state
-        placeholder.markdown(
-            "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> Thinking... 🧠</div></div>",
-            unsafe_allow_html=True,
-        )
-
-        try:
-            for chunk in st.session_state.qa_chain.stream({
-                "question": query,
-                "chat_history": st.session_state.chat_history
-            }):
-                token = chunk.get("answer", "")
-                response += token
-                # Update the assistant bubble left-aligned
-                placeholder.markdown(
-                    f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> {response}</div></div>",
-                    unsafe_allow_html=True,
-                )
-        except Exception:
+        # Small talk → answer normally (no RAG), one short sentence
+        if is_smalltalk(query):
+            resp = st.session_state.general_chain.invoke({"user_input": query})["text"].strip()
+            render_assistant(resp)
+            st.session_state.chat_history.append((query, resp))
+        else:
+            response = ""
+            placeholder = st.empty()
             placeholder.markdown(
-                "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> ❌ Error connecting to model.</div></div>",
+                "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> Thinking... 🧠</div></div>",
                 unsafe_allow_html=True,
             )
-            raise
 
-        st.session_state.chat_history.append((query, response))
+            try:
+                for chunk in st.session_state.qa_chain.stream({
+                    "question": query,
+                    "chat_history": st.session_state.chat_history
+                }):
+                    token = chunk.get("answer", "")
+                    response += token
+                    placeholder.markdown(
+                        f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> {response}</div></div>",
+                        unsafe_allow_html=True,
+                    )
+            except Exception:
+                placeholder.markdown(
+                    "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> ❌ Error connecting to model.</div></div>",
+                    unsafe_allow_html=True,
+                )
+                raise
+
+            st.session_state.chat_history.append((query, response.strip()))
 
     st.markdown("---")
     st.markdown(
