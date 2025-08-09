@@ -71,7 +71,7 @@ def render_user(text: str):
 
 def render_assistant(text: str):
     st.markdown(
-        f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> {text}</div></div>",
+        f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Holdings :</b> {text}</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -169,7 +169,7 @@ if st.session_state.vectorstore_ready:
         response = ""
         placeholder = st.empty()
         placeholder.markdown(
-            "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> Thinking... 🧠</div></div>",
+            "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Holdings :</b> Typing... </div></div>",
             unsafe_allow_html=True,
         )
 
@@ -186,12 +186,12 @@ if st.session_state.vectorstore_ready:
                 response += piece
                 # keep it snappy in UI as it streams
                 placeholder.markdown(
-                    f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> {response}</div></div>",
+                    f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Holdings :</b> {response}</div></div>",
                     unsafe_allow_html=True,
                 )
         except Exception:
             placeholder.markdown(
-                "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> ❌ Error connecting to model.</div></div>",
+                "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Holdings :</b> ❌ Error connecting to model.</div></div>",
                 unsafe_allow_html=True,
             )
             raise
