@@ -9,6 +9,8 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
+from langchain.chains.question_answering import load_qa_chain
+from langchain.chains.llm import LLMChain
 
 # 🔐 Load secure API key
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
@@ -31,11 +33,11 @@ def get_file_hash(files):
         md5.update(file.getvalue())
     return md5.hexdigest()
 
-# 🧠 Concise doc-combine prompt (⚠️ must use {context} and {question})
+# 🧠 Concise doc-combine prompt (MUST use {context} & {question})
 DOC_PROMPT = PromptTemplate.from_template("""
 You are a financial assistant. Use ONLY the context to answer the question concisely.
 
-If the user asks for a specific metric (e.g., Profit Before Tax, Total Equity, EPS), return ONLY that metric in this format:
+If the user asks for a specific metric (e.g., Profit Before Tax, Total Equity, EPS), return ONLY that metric in this exact format:
 <Metric Name>: <value>
 
 No extra sentences unless specifically asked.
@@ -46,6 +48,18 @@ Context:
 Question: {question}
 
 Answer:
+""")
+
+# 🔁 Question rewriter (MUST use {chat_history} & {question})
+CONDENSE_QUESTION_PROMPT = PromptTemplate.from_template("""
+Given the conversation and a follow-up question, rewrite the follow-up into a standalone question that can be answered from the context.
+
+Chat History:
+{chat_history}
+
+Follow-up Question: {question}
+
+Standalone Question:
 """)
 
 # 📄 Top Upload Section (Main area)
@@ -101,18 +115,25 @@ if uploaded_files and not st.session_state.vectorstore_ready:
         temperature=0.2
     )
 
-    # 🧠 QA chain with the correct doc-combine prompt (no pydantic errors)
-    st.session_state.qa_chain = ConversationalRetrievalChain.from_llm(
-        llm=llm,
+    # ✅ Build the two internal chains explicitly to avoid Pydantic validation errors
+    # 1) Combine docs chain (StuffDocumentsChain) expects {context, question}
+    combine_docs_chain = load_qa_chain(llm, chain_type="stuff", prompt=DOC_PROMPT)
+
+    # 2) Question generator (LLMChain) expects {chat_history, question}
+    question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
+
+    # 3) Wire them into ConversationalRetrievalChain
+    st.session_state.qa_chain = ConversationalRetrievalChain(
         retriever=retriever,
-        chain_type="stuff",
-        combine_docs_chain_kwargs={"prompt": DOC_PROMPT},
+        combine_docs_chain=combine_docs_chain,
+        question_generator=question_generator,
         return_source_documents=False
     )
+
     st.session_state.vectorstore_ready = True
     st.success("✅ Your files are ready. Start chatting below 👇")
 
-# 💬 Chat Interface
+# 💬 Chat Interface (unchanged design)
 if st.session_state.vectorstore_ready:
     for q, a in st.session_state.chat_history:
         with st.chat_message("user"):
