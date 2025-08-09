@@ -16,7 +16,7 @@ from langchain.chains.llm import LLMChain
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
 
 # 🚀 Page config
-st.set_page_config(page_title="SriMethan AI • PDF Chat 🤖", layout="centered")
+st.set_page_config(page_title="SriMethan AI", layout="centered")
 
 # 🎨 Light theme + ChatGPT-style, with right/left alignment
 st.markdown("""
@@ -187,7 +187,7 @@ def render_user(text: str):
 
 def render_assistant(text: str):
     st.markdown(
-        f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model 🤖:</b> {text}</div></div>",
+        f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> {text}</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -206,7 +206,7 @@ if st.session_state.vectorstore_ready:
         placeholder = st.empty()
         # Initial assistant bubble (left) with thinking state
         placeholder.markdown(
-            "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model 🤖:</b> Thinking... 🧠</div></div>",
+            "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> Thinking... 🧠</div></div>",
             unsafe_allow_html=True,
         )
 
@@ -219,12 +219,12 @@ if st.session_state.vectorstore_ready:
                 response += token
                 # Update the assistant bubble left-aligned
                 placeholder.markdown(
-                    f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model 🤖:</b> {response}</div></div>",
+                    f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> {response}</div></div>",
                     unsafe_allow_html=True,
                 )
         except Exception:
             placeholder.markdown(
-                "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model 🤖:</b> ❌ Error connecting to model.</div></div>",
+                "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model :</b> ❌ Error connecting to model.</div></div>",
                 unsafe_allow_html=True,
             )
             raise
