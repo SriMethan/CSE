@@ -18,31 +18,43 @@ OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
 # 🚀 Page config
 st.set_page_config(page_title="SriMethan AI • PDF Chat 🤖", layout="centered")
 
-# 🎨 Custom CSS (Light theme + ChatGPT-style bubbles)
+# 🎨 Light theme + ChatGPT-style, with right/left alignment
 st.markdown("""
 <style>
 body {
     background-color: #ffffff;
-    font-family: "Segoe UI", sans-serif;
+    font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
 }
-.chat-bubble-user {
-    background-color: #DCF8C6;
-    color: black;
+
+/* Message row containers */
+.chat-row {
+    display: flex;
+    margin: 8px 0;
+}
+.chat-row.user { justify-content: flex-end; }
+.chat-row.assistant { justify-content: flex-start; }
+
+/* Bubbles */
+.chat-bubble {
     padding: 10px 14px;
     border-radius: 12px;
     max-width: 80%;
-    margin-bottom: 8px;
-    box-shadow: 0px 1px 2px rgba(0,0,0,0.1);
+    box-shadow: 0px 1px 2px rgba(0,0,0,0.08);
+    border: 1px solid #eee;
+    line-height: 1.45;
+    word-wrap: break-word;
+    white-space: pre-wrap;
 }
-.chat-bubble-assistant {
-    background-color: #F1F0F0;
-    color: black;
-    padding: 10px 14px;
-    border-radius: 12px;
-    max-width: 80%;
-    margin-bottom: 8px;
-    box-shadow: 0px 1px 2px rgba(0,0,0,0.1);
+.chat-bubble.user {
+    background-color: #DCF8C6; /* light green (iMessage style) */
+    color: #111;
 }
+.chat-bubble.assistant {
+    background-color: #F7F7F8; /* subtle gray like ChatGPT light */
+    color: #111;
+}
+
+/* Hide default Streamlit header/footer chrome */
 footer, header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
@@ -62,7 +74,7 @@ def get_file_hash(files):
         md5.update(file.getvalue())
     return md5.hexdigest()
 
-# 🧠 Prompts
+# 🧠 Prompts (unchanged)
 DOC_PROMPT = PromptTemplate.from_template("""
 You are a financial assistant. Use ONLY the context to answer the question concisely.
 
@@ -93,14 +105,18 @@ Standalone Question:
 # 📄 Upload section
 st.markdown("<h1 style='text-align:center;'>👑 SRIMETHAN HOLDINGS (PVT) LTD</h1>", unsafe_allow_html=True)
 st.markdown("## 📄 Upload Your PDF(s)")
-uploaded_files_top = st.file_uploader("Upload here to get started:", type=["pdf"], accept_multiple_files=True)
+uploaded_files_top = st.file_uploader(
+    "Upload here to get started:", type=["pdf"], accept_multiple_files=True
+)
 
 # 📄 Sidebar
 with st.sidebar:
     st.markdown("### 🏢 **SriMethan Holdings (PVT) LTD**")
     st.markdown("Bringing your documents to life with AI ⚡")
     st.markdown("---")
-    uploaded_files_sidebar = st.file_uploader("Re-upload your PDFs:", type=["pdf"], accept_multiple_files=True, key="sidebar_upload")
+    uploaded_files_sidebar = st.file_uploader(
+        "Re-upload your PDFs:", type=["pdf"], accept_multiple_files=True, key="sidebar_upload"
+    )
     if uploaded_files_sidebar:
         uploaded_files_top = uploaded_files_sidebar
 
@@ -134,7 +150,7 @@ if uploaded_files and not st.session_state.vectorstore_ready:
 
     retriever = vectorstore.as_retriever()
 
-    # 🤖 LLM
+    # 🤖 LLM (OpenRouter)
     os.environ.pop("OPENAI_API_KEY", None)
     os.environ.pop("OPENAI_BASE_URL", None)
     llm = ChatOpenAI(
@@ -162,18 +178,37 @@ if uploaded_files and not st.session_state.vectorstore_ready:
     st.session_state.vectorstore_ready = True
     st.success("✅ Your files are ready. Start chatting below 👇")
 
-# 💬 Chat UI
-if st.session_state.vectorstore_ready:
-    for q, a in st.session_state.chat_history:
-        st.markdown(f"<div class='chat-bubble-user'><b>You:</b> {q}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='chat-bubble-assistant'><b>SriMethan Model 🤖:</b> {a}</div>", unsafe_allow_html=True)
+# 💬 Chat UI (user → right, model → left)
+def render_user(text: str):
+    st.markdown(
+        f"<div class='chat-row user'><div class='chat-bubble user'><b>You:</b> {text}</div></div>",
+        unsafe_allow_html=True,
+    )
 
+def render_assistant(text: str):
+    st.markdown(
+        f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model 🤖:</b> {text}</div></div>",
+        unsafe_allow_html=True,
+    )
+
+if st.session_state.vectorstore_ready:
+    # History
+    for q, a in st.session_state.chat_history:
+        render_user(q)
+        render_assistant(a)
+
+    # Input
     query = st.chat_input("💬 Type your next question...")
     if query:
-        st.markdown(f"<div class='chat-bubble-user'><b>You:</b> {query}</div>", unsafe_allow_html=True)
+        render_user(query)
+
         response = ""
         placeholder = st.empty()
-        placeholder.markdown(f"<div class='chat-bubble-assistant'><b>SriMethan Model 🤖:</b> Thinking... 🧠</div>", unsafe_allow_html=True)
+        # Initial assistant bubble (left) with thinking state
+        placeholder.markdown(
+            "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model 🤖:</b> Thinking... 🧠</div></div>",
+            unsafe_allow_html=True,
+        )
 
         try:
             for chunk in st.session_state.qa_chain.stream({
@@ -182,11 +217,24 @@ if st.session_state.vectorstore_ready:
             }):
                 token = chunk.get("answer", "")
                 response += token
-                placeholder.markdown(f"<div class='chat-bubble-assistant'><b>SriMethan Model 🤖:</b> {response}</div>", unsafe_allow_html=True)
-        except:
-            placeholder.markdown(f"<div class='chat-bubble-assistant'><b>SriMethan Model 🤖:</b> ❌ Error connecting to model.</div>", unsafe_allow_html=True)
+                # Update the assistant bubble left-aligned
+                placeholder.markdown(
+                    f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model 🤖:</b> {response}</div></div>",
+                    unsafe_allow_html=True,
+                )
+        except Exception:
+            placeholder.markdown(
+                "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Model 🤖:</b> ❌ Error connecting to model.</div></div>",
+                unsafe_allow_html=True,
+            )
+            raise
 
         st.session_state.chat_history.append((query, response))
 
     st.markdown("---")
-    st.markdown("<div style='text-align: center; font-size: 0.9em;'>Powered by <strong>SriMethan Holdings (PVT) LTD</strong> • © 2025 All rights reserved.</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div style='text-align: center; font-size: 0.9em;'>"
+        "Powered by <strong>SriMethan Holdings (PVT) LTD</strong> • © 2025 All rights reserved."
+        "</div>",
+        unsafe_allow_html=True,
+    )
