@@ -100,13 +100,15 @@ if uploaded_files and not st.session_state.vectorstore_ready:
         temperature=0.2
     )
 
-    # 🧠 QA chain with custom concise prompt
+    # 🧠 QA chain with custom concise prompt (stable builder)
     st.session_state.qa_chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=retriever,
+        chain_type="stuff",  # 👈 make chain explicit
         combine_docs_chain_kwargs={"prompt": CONDENSE_PROMPT},
         return_source_documents=False
     )
+
     st.session_state.vectorstore_ready = True
     st.success("✅ Your files are ready. Start chatting below 👇")
 
