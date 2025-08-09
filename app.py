@@ -169,7 +169,7 @@ if st.session_state.vectorstore_ready:
         response = ""
         placeholder = st.empty()
         placeholder.markdown(
-            "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Holdings (PVT) LTD :</b> Typing... </div></div>",
+            "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan :</b> Typing... </div></div>",
             unsafe_allow_html=True,
         )
 
@@ -186,12 +186,12 @@ if st.session_state.vectorstore_ready:
                 response += piece
                 # keep it snappy in UI as it streams
                 placeholder.markdown(
-                    f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Holdings (PVT) LTD :</b> {response}</div></div>",
+                    f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan :</b> {response}</div></div>",
                     unsafe_allow_html=True,
                 )
         except Exception:
             placeholder.markdown(
-                "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Holdings (PVT) LTD :</b> ❌ Error connecting to model.</div></div>",
+                "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan :</b> ❌ Error connecting to model.</div></div>",
                 unsafe_allow_html=True,
             )
             raise
