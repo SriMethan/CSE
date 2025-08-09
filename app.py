@@ -13,7 +13,7 @@ from langchain_core.messages import HumanMessage
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
 
 # 🚀 Page config
-st.set_page_config(page_title="SriMethan AI", layout="centered")
+st.set_page_config(page_title="SriMethan Holdings (PVT) LTD", layout="centered")
 
 # 🎨 Light theme + ChatGPT-style, with right/left alignment
 st.markdown("""
@@ -71,7 +71,7 @@ def render_user(text: str):
 
 def render_assistant(text: str):
     st.markdown(
-        f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Holdings :</b> {text}</div></div>",
+        f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Holdings (PVT) LTD :</b> {text}</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -107,7 +107,7 @@ uploaded_files_top = st.file_uploader("Upload here to get started:", type=["pdf"
 
 # 📄 Sidebar (brand)
 with st.sidebar:
-    st.markdown("### 🏢 **SriMethan Holdings (PVT) LTD**")
+    st.markdown("### 🏢 **SriMethan Holdings (PVT)    LTD**")
     st.markdown("Bringing your documents to life with AI ⚡")
     st.markdown("---")
     uploaded_files_sidebar = st.file_uploader("Re-upload your PDFs:", type=["pdf"], accept_multiple_files=True, key="sidebar_upload")
@@ -169,7 +169,7 @@ if st.session_state.vectorstore_ready:
         response = ""
         placeholder = st.empty()
         placeholder.markdown(
-            "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Holdings :</b> Typing... </div></div>",
+            "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Holdings (PVT) LTD :</b> Typing... </div></div>",
             unsafe_allow_html=True,
         )
 
@@ -186,12 +186,12 @@ if st.session_state.vectorstore_ready:
                 response += piece
                 # keep it snappy in UI as it streams
                 placeholder.markdown(
-                    f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Holdings :</b> {response}</div></div>",
+                    f"<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Holdings (PVT) LTD :</b> {response}</div></div>",
                     unsafe_allow_html=True,
                 )
         except Exception:
             placeholder.markdown(
-                "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Holdings :</b> ❌ Error connecting to model.</div></div>",
+                "<div class='chat-row assistant'><div class='chat-bubble assistant'><b>SriMethan Holdings (PVT) LTD :</b> ❌ Error connecting to model.</div></div>",
                 unsafe_allow_html=True,
             )
             raise
