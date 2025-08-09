@@ -31,19 +31,20 @@ def get_file_hash(files):
         md5.update(file.getvalue())
     return md5.hexdigest()
 
-# 🧠 Concise answer mode prompt
-CONDENSE_PROMPT = PromptTemplate.from_template("""
-You're a financial assistant bot. Answer concisely and factually.
+# 🧠 Concise doc-combine prompt (⚠️ must use {context} and {question})
+DOC_PROMPT = PromptTemplate.from_template("""
+You are a financial assistant. Use ONLY the context to answer the question concisely.
 
-If the question is asking for a specific number like "Profit Before Tax", return ONLY that number in this format:
+If the user asks for a specific metric (e.g., Profit Before Tax, Total Equity, EPS), return ONLY that metric in this format:
+<Metric Name>: <value>
 
-Profit Before Tax: Rs. [value]
+No extra sentences unless specifically asked.
 
-Do NOT give explanations, context, or summaries unless explicitly asked.
-Use only the context provided and don't guess.
+Context:
+{context}
 
 Question: {question}
-Chat History: {chat_history}
+
 Answer:
 """)
 
@@ -100,15 +101,14 @@ if uploaded_files and not st.session_state.vectorstore_ready:
         temperature=0.2
     )
 
-    # 🧠 QA chain with custom concise prompt (stable builder)
+    # 🧠 QA chain with the correct doc-combine prompt (no pydantic errors)
     st.session_state.qa_chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=retriever,
-        chain_type="stuff",  # 👈 make chain explicit
-        combine_docs_chain_kwargs={"prompt": CONDENSE_PROMPT},
+        chain_type="stuff",
+        combine_docs_chain_kwargs={"prompt": DOC_PROMPT},
         return_source_documents=False
     )
-
     st.session_state.vectorstore_ready = True
     st.success("✅ Your files are ready. Start chatting below 👇")
 
